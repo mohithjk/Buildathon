@@ -1,0 +1,262 @@
+<!--
+Amazon-like single-file demo (HTML/CSS/JS)
+Instructions:
+1. Save this file as `templates/index.html` in your Flask project (the simple structure we discussed).
+2. The file is fully front-end and uses localStorage for the shopping cart so it works without a backend.
+   If you prefer backend cart sync, replace localStorage parts with fetch() calls to your Flask endpoints (/api/cart etc.).
+3. Run your Flask app that serves this template (e.g. `render_template('index.html')`).
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini Amazon — Demo</title>
+  <style>
+    /* Basic reset */
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family: Arial, Helvetica, sans-serif;background:#fff;color:#111}
+
+    /* Header */
+    .topbar{background:#131921;color:white;padding:8px 16px;display:flex;align-items:center}
+    .logo{font-weight:700;font-size:20px;margin-right:16px}
+    .search{flex:1;display:flex;align-items:center}
+    .search input{width:100%;padding:10px;border-radius:4px 0 0 4px;border:none}
+    .search button{padding:10px 14px;border:none;border-radius:0 4px 4px 0;background:#febd69;cursor:pointer}
+    .nav-links{display:flex;gap:16px;margin-left:16px}
+    .nav-links a{color:white;text-decoration:none;font-size:14px}
+
+    /* Layout */
+    .container{max-width:1200px;margin:18px auto;padding:0 12px}
+    .hero{display:flex;gap:16px;margin-bottom:18px}
+    .hero .carousel{flex:1;background:linear-gradient(90deg,#f0c14b,#fff);height:220px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:28px}
+    .hero .side-ads{width:260px;display:flex;flex-direction:column;gap:12px}
+    .side-ads .ad{background:#eee;height:100px;border-radius:6px;display:flex;align-items:center;justify-content:center}
+
+    /* Product grid */
+    .products{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+    .card{border:1px solid #e6e6e6;padding:12px;border-radius:6px;background:white}
+    .card img{width:100%;height:160px;object-fit:contain}
+    .card .title{font-size:14px;margin:8px 0;height:36px;overflow:hidden}
+    .card .price{font-weight:700;margin-bottom:8px}
+    .card button{background:#f0c14b;border:1px solid #a88734;padding:8px;width:100%;border-radius:4px;cursor:pointer}
+
+    /* Cart sidebar */
+    .cart-toggle{position:fixed;right:18px;bottom:18px;background:#ff9900;border-radius:50%;width:56px;height:56px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.15)}
+    .cart-panel{position:fixed;right:0;top:0;height:100%;width:360px;background:white;border-left:1px solid #ddd;transform:translateX(100%);transition:transform .22s ease-in-out;z-index:50;padding:16px;overflow:auto}
+    .cart-panel.open{transform:translateX(0)}
+    .cart-item{display:flex;gap:10px;margin-bottom:12px;align-items:center}
+    .cart-item img{width:64px;height:64px;object-fit:contain}
+    .qty-controls{display:flex;gap:6px;align-items:center}
+    .checkout{margin-top:12px;padding:10px;background:#ffd814;border:1px solid #f0c14b;border-radius:6px;cursor:pointer}
+
+    /* Footer */
+    footer{margin-top:28px;padding:18px;text-align:center;color:#666}
+
+    /* Responsive tweaks */
+    @media (max-width:700px){
+      .hero{flex-direction:column}
+      .hero .side-ads{width:100%;flex-direction:row}
+      .hero .side-ads .ad{flex:1}
+      .cart-panel{width:100vw}
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="topbar">
+    <div class="logo">MiniMart</div>
+    <div class="search">
+      <input id="searchInput" placeholder="Search for products, brands and more...">
+      <button id="searchBtn">Search</button>
+    </div>
+    <div class="nav-links">
+      <a href="#">Hello, Sign in</a>
+      <a href="#">Returns</a>
+      <a href="#" id="cartCountLink">Cart (<span id="cartCount">0</span>)</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="hero">
+      <div class="carousel">Big Promo Banner</div>
+      <div class="side-ads">
+        <div class="ad">Ad 1</div>
+        <div class="ad">Ad 2</div>
+      </div>
+    </div>
+
+    <h2>Featured products</h2>
+    <div class="products" id="productsGrid">
+      <!-- product cards injected here -->
+    </div>
+
+    <footer>
+      © MiniMart demo • Not affiliated with Amazon
+    </footer>
+  </div>
+
+  <!-- Cart Toggle -->
+  <div class="cart-toggle" id="openCart">🛒</div>
+
+  <!-- Cart Panel -->
+  <aside class="cart-panel" id="cartPanel">
+    <h3>Your Cart</h3>
+    <div id="cartItems"></div>
+    <div style="margin-top:8px">Total: <strong id="cartTotal">₹0.00</strong></div>
+    <button class="checkout" id="checkoutBtn">Proceed to Checkout</button>
+  </aside>
+
+<script>
+// Sample products data (in real app you'd fetch from backend)
+const PRODUCTS = [
+  {id:1,title:'Wireless Headphones',price:1499,image:''},
+  {id:2,title:'Bluetooth Speaker',price:999,image:''},
+  {id:3,title:'Smart Watch',price:2499,image:''},
+  {id:4,title:'Portable Charger 20000mAh',price:1299,image:''},
+  {id:5,title:'Gaming Mouse',price:799,image:''},
+  {id:6,title:'Mechanical Keyboard',price:1999,image:''},
+  {id:7,title:'4K Monitor 27"',price:17999,image:''},
+  {id:8,title:'USB-C Hub',price:899,image:''}
+];
+
+// Render products
+const productsGrid = document.getElementById('productsGrid');
+function renderProducts(list){
+  productsGrid.innerHTML = '';
+  list.forEach(p=>{
+    const card = document.createElement('div'); card.className='card';
+    card.innerHTML = `
+      <img src="https://via.placeholder.com/300x160?text=${encodeURIComponent(p.title)}" alt="${p.title}">
+      <div class="title">${p.title}</div>
+      <div class="price">₹${p.price.toFixed(2)}</div>
+      <button data-id="${p.id}">Add to Cart</button>
+    `;
+    productsGrid.appendChild(card);
+  });
+}
+renderProducts(PRODUCTS);
+
+// Simple cart stored in localStorage
+const CART_KEY = 'mini_cart_v1';
+function getCart(){
+  return JSON.parse(localStorage.getItem(CART_KEY) || '{}');
+}
+function saveCart(cart){
+  localStorage.setItem(CART_KEY, JSON.stringify(cart));
+}
+function addToCart(productId){
+  const cart = getCart();
+  cart[productId] = (cart[productId]||0)+1;
+  saveCart(cart);
+  updateCartCount();
+}
+function removeFromCart(productId){
+  const cart = getCart();
+  delete cart[productId];
+  saveCart(cart);
+  updateCartCount();
+}
+function changeQty(productId, qty){
+  const cart = getCart();
+  if(qty<=0){ delete cart[productId]; }
+  else cart[productId]=qty;
+  saveCart(cart);
+  updateCartCount();
+}
+
+// Event delegation for add to cart
+productsGrid.addEventListener('click', e=>{
+  if(e.target.tagName==='BUTTON'){
+    const id = e.target.dataset.id;
+    addToCart(id);
+    // brief feedback
+    e.target.innerText = 'Added ✓';
+    setTimeout(()=>e.target.innerText='Add to Cart',800);
+  }
+});
+
+// Cart UI
+const cartPanel = document.getElementById('cartPanel');
+const openCartBtn = document.getElementById('openCart');
+const cartItemsEl = document.getElementById('cartItems');
+const cartCountEl = document.getElementById('cartCount');
+const cartCountLink = document.getElementById('cartCountLink');
+const cartTotalEl = document.getElementById('cartTotal');
+
+openCartBtn.addEventListener('click', ()=>{
+  cartPanel.classList.toggle('open');
+  renderCartItems();
+});
+cartCountLink.addEventListener('click', (e)=>{ e.preventDefault(); cartPanel.classList.add('open'); renderCartItems(); });
+
+function updateCartCount(){
+  const cart = getCart();
+  const count = Object.values(cart).reduce((s,q)=>s+q,0);
+  cartCountEl.innerText = count;
+}
+
+function renderCartItems(){
+  const cart = getCart();
+  cartItemsEl.innerHTML='';
+  let total=0;
+  for(const id in cart){
+    const qty = cart[id];
+    const prod = PRODUCTS.find(p=>p.id==id);
+    if(!prod) continue;
+    total += prod.price*qty;
+    const item = document.createElement('div'); item.className='cart-item';
+    item.innerHTML = `
+      <img src="https://via.placeholder.com/100x100?text=${encodeURIComponent(prod.title)}" alt="${prod.title}">
+      <div style="flex:1">
+        <div style="font-size:14px">${prod.title}</div>
+        <div style="font-weight:700">₹${prod.price.toFixed(2)}</div>
+        <div class="qty-controls">
+          <button data-op="dec" data-id="${prod.id}">-</button>
+          <span>${qty}</span>
+          <button data-op="inc" data-id="${prod.id}">+</button>
+          <button data-op="remove" data-id="${prod.id}" style="margin-left:8px">Remove</button>
+        </div>
+      </div>
+    `;
+    cartItemsEl.appendChild(item);
+  }
+  cartTotalEl.innerText = '₹' + total.toFixed(2);
+}
+
+// Cart item controls (increase, decrease, remove)
+cartItemsEl.addEventListener('click', e=>{
+  const op = e.target.dataset.op;
+  const id = e.target.dataset.id;
+  if(!op || !id) return;
+  const cart = getCart();
+  if(op==='inc') changeQty(id, (cart[id]||0)+1);
+  if(op==='dec') changeQty(id, (cart[id]||0)-1);
+  if(op==='remove') removeFromCart(id);
+  renderCartItems();
+});
+
+// Search
+const searchInput = document.getElementById('searchInput');
+const searchBtn = document.getElementById('searchBtn');
+searchBtn.addEventListener('click', ()=>{
+  const q = searchInput.value.trim().toLowerCase();
+  if(!q){ renderProducts(PRODUCTS); return; }
+  const filtered = PRODUCTS.filter(p=>p.title.toLowerCase().includes(q));
+  renderProducts(filtered);
+});
+
+// Checkout stub
+const checkoutBtn = document.getElementById('checkoutBtn');
+checkoutBtn.addEventListener('click', ()=>{
+  alert('Proceeding to checkout (demo). In a real app, send cart to your backend endpoint and create an order.');
+});
+
+// Initialize counts on load
+updateCartCount();
+
+</script>
+</body>
+</html>
